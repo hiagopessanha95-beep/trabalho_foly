@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:trabalho_foly/authentication.dart';
 import 'package:trabalho_foly/principal.dart';
+import 'package:trabalho_foly/turmas.dart';
 
 class Registrar extends StatelessWidget {
   const Registrar({super.key});
@@ -100,6 +103,7 @@ class _RegistrarFormState extends State<RegistrarForm> {
   String? email;
   String? senha;
   String? confirmarSenha;
+  String? turma;
 
   bool _obscureText = true;
   bool _obscureTextConfirmar = true;
@@ -190,6 +194,41 @@ class _RegistrarFormState extends State<RegistrarForm> {
             },
             onSaved: (val) {
               email = val?.trim();
+            },
+          ),
+
+          const SizedBox(height: 18),
+
+          // TURMA
+          DropdownButtonFormField<String>(
+            isExpanded: true,
+            decoration: _buildDecoration(
+              label: 'Turma',
+              icon: Icons.groups_outlined,
+            ),
+            style: const TextStyle(fontSize: 16, color: Colors.black87),
+            borderRadius: BorderRadius.circular(16),
+            items: listaTurmas
+                .map(
+                  (t) => DropdownMenuItem<String>(
+                    value: t,
+                    child: Text(t),
+                  ),
+                )
+                .toList(),
+            onChanged: _isLoading
+                ? null
+                : (val) {
+                    setState(() => turma = val);
+                  },
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Selecione sua turma';
+              }
+              return null;
+            },
+            onSaved: (val) {
+              turma = val;
             },
           ),
 
@@ -342,62 +381,76 @@ class _RegistrarFormState extends State<RegistrarForm> {
     );
   }
 
-  void _handleRegistrar() {
-    if (_formKey.currentState!.validate()) {
-      _formKey.currentState!.save();
+  void _mostrarErro(String mensagem) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: Colors.redAccent,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        content: Text(
+          mensagem,
+          style: const TextStyle(fontSize: 15),
+        ),
+      ),
+    );
+  }
 
-      if (senha != confirmarSenha) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: Colors.redAccent,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            content: const Text(
-              'As senhas não coincidem',
-              style: TextStyle(fontSize: 15),
-            ),
-          ),
-        );
-        return;
-      }
+  Future<void> _handleRegistrar() async {
+    if (!_formKey.currentState!.validate()) return;
 
-      setState(() => _isLoading = true);
+    _formKey.currentState!.save();
 
-      AuthenticationHelper()
-          .signUp(
-            nome: nome!,
-            email: email!,
-            password: senha!,
-          )
-          .then((result) {
-        if (!mounted) return;
-        setState(() => _isLoading = false);
-
-        if (result == null) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const Principal(),
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: Colors.redAccent,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              content: Text(
-                AuthenticationHelper().traduzirRetorno(result),
-                style: const TextStyle(fontSize: 15),
-              ),
-            ),
-          );
-        }
-      });
+    if (senha != confirmarSenha) {
+      _mostrarErro('As senhas não coincidem');
+      return;
     }
+
+    setState(() => _isLoading = true);
+
+    final result = await AuthenticationHelper().signUp(
+      nome: nome!,
+      email: email!,
+      password: senha!,
+    );
+
+    if (!mounted) return;
+
+    if (result != null) {
+      setState(() => _isLoading = false);
+      _mostrarErro(AuthenticationHelper().traduzirRetorno(result));
+      return;
+    }
+
+    // Cadastro criado: salva a turma do usuário no Firestore
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+
+      if (user != null) {
+        await FirebaseFirestore.instance
+            .collection('usuarios')
+            .doc(user.uid)
+            .set({
+          'nome': nome,
+          'email': email!.toLowerCase(),
+          'turma': turma,
+          'criadoEm': FieldValue.serverTimestamp(),
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao salvar turma: $e');
+      // Segue em frente: na tela principal o usuário pode escolher a turma
+    }
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const Principal(),
+      ),
+    );
   }
 }

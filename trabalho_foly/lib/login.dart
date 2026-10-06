@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:trabalho_foly/authentication.dart';
 import 'package:trabalho_foly/principal.dart';
 import 'package:trabalho_foly/registrar.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class Login extends StatelessWidget {
   const Login({super.key});
@@ -97,6 +98,39 @@ class _LoginFormState extends State<LoginForm> {
 
   bool _obscureText = true;
   bool _isLoading = false;
+    final _emailController = TextEditingController();
+  bool _lembrar = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregarEmail();
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    super.dispose();
+  }
+
+  // Lê o e-mail salvo no aparelho
+  Future<void> _carregarEmail() async {
+    final prefs = await SharedPreferences.getInstance();
+    final salvo = prefs.getString('email_salvo');
+    if (salvo != null && mounted) {
+      setState(() => _emailController.text = salvo);
+    }
+  }
+
+  // Salva (ou apaga) o e-mail no aparelho
+  Future<void> _salvarEmail() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_lembrar && email != null) {
+      await prefs.setString('email_salvo', email!.trim());
+    } else {
+      await prefs.remove('email_salvo');
+    }
+  }
 
   static const Color roxoPrincipal = Color(0xFF6A11CB);
   static const Color roxoSecundario = Color(0xFF8E2DE2);
@@ -144,6 +178,7 @@ class _LoginFormState extends State<LoginForm> {
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           TextFormField(
+            controller: _emailController,
             decoration: _buildDecoration(
               label: 'Email',
               icon: Icons.email_outlined,
@@ -194,7 +229,21 @@ class _LoginFormState extends State<LoginForm> {
             },
           ),
 
+                    // (aqui termina o campo de Senha)
+
+          CheckboxListTile(
+            value: _lembrar,
+            onChanged: (v) => setState(() => _lembrar = v ?? false),
+            title: const Text('Lembrar e-mail',
+                style: TextStyle(fontSize: 14)),
+            controlAffinity: ListTileControlAffinity.leading,
+            contentPadding: EdgeInsets.zero,
+            activeColor: roxoPrincipal,
+          ),
+
           const SizedBox(height: 30),
+
+          // BOTÃO DE LOGIN COM GRADIENTE
 
           // BOTÃO DE LOGIN COM GRADIENTE
           SizedBox(
@@ -275,7 +324,7 @@ class _LoginFormState extends State<LoginForm> {
     );
   }
 
-  void _handleLogin() {
+    void _handleLogin() {
     if (_formKey.currentState!.validate()) {
       _formKey.currentState!.save();
       setState(() => _isLoading = true);
@@ -285,11 +334,13 @@ class _LoginFormState extends State<LoginForm> {
             email: email!,
             password: senha!,
           )
-          .then((result) {
+          .then((result) async {
         if (!mounted) return;
         setState(() => _isLoading = false);
 
         if (result == null) {
+          await _salvarEmail();   // <-- NOVO: guarda o e-mail no aparelho
+          if (!mounted) return;
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
